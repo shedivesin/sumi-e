@@ -1,0 +1,251 @@
+<!doctype html>
+<canvas width="800" height="2000"></canvas>
+<script>
+function fill(array) {
+  for(let i = 0; i < array.length; i++) {
+    array[i] = i;
+  }
+}
+
+function shuffle(array) {
+  for(let i = 0; i < array.length; i++) {
+    const j = i + Math.floor((array.length - i) * Math.random());
+    const t = array[i];
+    array[i] = array[j];
+    array[j] = t;
+  }
+}
+
+
+const noise = new Array(256);
+
+function reset() {
+  fill(noise);
+  shuffle(noise);
+}
+
+function smoothstep(x) {
+  return (3 - 2 * x) * x * x;
+}
+
+function lerp(a, b, x) {
+  return a + (b - a) * x;
+}
+
+function field(x, y, z) {
+  const u = Math.floor(x);
+  const v = Math.floor(y);
+  const w = Math.floor(z);
+  const i = u + v * 17 + w * 43;
+
+  x = smoothstep(x - u);
+  y = smoothstep(y - v);
+  z = smoothstep(z - w);
+
+  return lerp(
+    lerp(
+      lerp(noise[(i +  0) & 255], noise[(i +  1) & 255], x),
+      lerp(noise[(i + 17) & 255], noise[(i + 18) & 255], x),
+      y,
+    ),
+    lerp(
+      lerp(noise[(i + 43) & 255], noise[(i + 44) & 255], x),
+      lerp(noise[(i + 60) & 255], noise[(i + 61) & 255], x),
+      y,
+    ),
+    z,
+  );
+}
+
+function fractal_field(x, y, z) {
+  return field(x /  1 +  2, y /  1 +  3, z /  1 +  5) * 0.06125 +
+         field(x /  2 +  7, y /  2 + 11, z /  2 + 13) * 0.09911 +
+         field(x /  4 + 17, y /  4 + 19, z /  4 + 23) * 0.16036 +
+         field(x /  8 + 29, y /  8 + 31, z /  8 + 37) * 0.25946 +
+         field(x / 16 + 41, y / 16 + 43, z / 16 + 47) * 0.41982;
+}
+
+
+const canvas = document.getElementsByTagName("canvas")[0];
+const ctx = canvas.getContext("2d");
+const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+const viscosity = 16 / id.width;
+
+function clear() {
+  id.data.fill(255);
+}
+
+function clamp(x, min, max) {
+  if(!(x > min)) { return min; }
+  if(!(x < max)) { return max; }
+  return x;
+}
+
+function circle(x, y, r, t, color) {
+  const min_u = Math.max(Math.floor(x - r), 0);
+  const min_v = Math.max(Math.floor(y - r), 0);
+  const max_u = Math.min(Math.ceil (x + r), id.width  - 1);
+  const max_v = Math.min(Math.ceil (y + r), id.height - 1);
+
+  for(let v = min_v; v <= max_v; v++) {
+    const dv = v + 0.5 - y;
+
+    for(let u = min_u; u <= max_u; u++) {
+      const du = u + 0.5 - x;
+      const sq = du * du + dv * dv;
+      if(sq > r * r) { continue; }
+      if(
+        id.data[(v * id.width + u) * 4 + 0] === color &&
+        id.data[(v * id.width + u) * 4 + 1] === color &&
+        id.data[(v * id.width + u) * 4 + 2] === color &&
+        id.data[(v * id.width + u) * 4 + 3] === 255
+      ) { continue; }
+      if(fractal_field(du, dv, t) > 255 * Math.exp(-sq / (r * r))) { continue; }
+
+      id.data[(v * id.width + u) * 4 + 0] = color;
+      id.data[(v * id.width + u) * 4 + 1] = color;
+      id.data[(v * id.width + u) * 4 + 2] = color;
+      id.data[(v * id.width + u) * 4 + 3] = 255;
+    }
+  }
+}
+
+function line(ax, ay, ar, bx, by, br, color, iv=0) {
+  const length = Math.floor(Math.hypot(bx - ax, by - ay)) + 1;
+
+  for(let i = 0; i < length; i++) {
+    const t = i / (length - 1);
+    const x = lerp(ax, bx, t);
+    const y = lerp(ay, by, t);
+    const r = lerp(ar, br, t);
+    circle(x, y, r, iv + i * viscosity, color);
+  }
+
+  return iv + (length - 1) * viscosity;
+}
+
+function arc(cx, cy, cr, isr, fsr, ia, fa, color, iv=0) {
+  const length = Math.floor((fa - ia) * cr) + 1;
+
+  for(let i = 0; i < length; i++) {
+    const t = i / (length - 1);
+    const a = lerp(ia, fa, t);
+    const x = cx + Math.sin(a) * cr;
+    const y = cy - Math.cos(a) * cr;
+    const r = lerp(isr, fsr, t);
+    circle(x, y, r, iv + i * viscosity, color);
+  }
+
+  return iv + (length - 1) * viscosity;
+}
+
+clear();
+
+reset();
+line(
+  id.width * (1 - Math.SQRT1_2) / 2,
+  id.height * 4 / 5,
+  id.width / 27.5,
+  id.width / 2,
+  id.height * (4 - Math.SQRT1_2) / 5,
+  id.width / 30,
+  191,
+  line(
+    id.width / 2,
+    id.height * (4 + Math.SQRT1_2) / 5,
+    id.width / 25,
+    id.width * (1 - Math.SQRT1_2) / 2,
+    id.height * 4 / 5,
+    id.width / 27.5,
+    191,
+    line(
+      id.width * (1 + Math.SQRT1_2) / 2,
+      id.height * 4 / 5,
+      id.width / 22.5,
+      id.width / 2,
+      id.height * (4 + Math.SQRT1_2) / 5,
+      id.width / 25,
+      191,
+      line(
+        id.width / 2,
+        id.height * (4 - Math.SQRT1_2) / 5,
+        id.width / 20,
+        id.width * (1 + Math.SQRT1_2) / 2,
+        id.height * 4 / 5,
+        id.width / 22.5,
+        191,
+      ),
+    ),
+  ),
+);
+
+reset();
+line(
+  id.width * 0.240164 / 2,
+  id.height * 3.438691 / 5,
+  id.width * 3 / 80,
+  id.width / 2,
+  id.height * 2.122617 / 5,
+  id.width / 30,
+  127,
+  line(
+    id.width * 1.759836 / 2,
+    id.height * 3.438691 / 5,
+    id.width * 3 / 70,
+    id.width * 0.240164 / 2,
+    id.height * 3.438691 / 5,
+    id.width * 3 / 80,
+    127,
+    line(
+      id.width / 2,
+      id.height * 2.122617 / 5,
+      id.width / 20,
+      id.width * 1.759836 / 2,
+      id.height * 3.438691 / 5,
+      id.width * 3 / 70,
+      127,
+    ),
+  ),
+);
+
+reset();
+arc(
+  id.width / 2 + id.width * Math.sqrt(6 / (4 * Math.PI - 3 * Math.sqrt(3))) / 4,
+  id.height * 2 / 5,
+  id.width * Math.sqrt(6 / (4 * Math.PI - 3 * Math.sqrt(3))) / 2,
+  id.width / 25,
+  id.width / 30,
+  Math.PI * 7 / 6,
+  Math.PI * 11 / 6,
+  63,
+  arc(
+    id.width / 2 - id.width * Math.sqrt(6 / (4 * Math.PI - 3 * Math.sqrt(3))) / 4,
+    id.height * 2 / 5,
+    id.width * Math.sqrt(6 / (4 * Math.PI - 3 * Math.sqrt(3))) / 2,
+    id.width / 20,
+    id.width / 25,
+    Math.PI / 6,
+    Math.PI * 5 / 6,
+    63,
+  ),
+);
+
+reset();
+arc(
+  id.width / 2,
+  id.height / 5,
+  id.width * Math.sqrt(1 / Math.PI) / 2,
+  id.width / 20,
+  id.width / 30,
+  0,
+  Math.PI * 2,
+  0,
+);
+
+/*
+circle(id.width / 2, id.height * 3 / 5, 32, 3, 102);
+circle(id.width / 2, id.height * 4 / 5, 32, 5, 153);
+*/
+
+ctx.putImageData(id, 0, 0);
+</script>
